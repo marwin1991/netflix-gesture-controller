@@ -13,6 +13,7 @@ from pynput.keyboard import Key, Controller
 # global variables
 bg = None
 keyboard = Controller()
+isStoped = False
 
 
 def resizeImage(imageName):
@@ -150,24 +151,39 @@ def getPredictedClass():
 
 
 def showStatistics(predictedClass, confidence):
+    global isStoped
     textImage = np.zeros((300, 512, 3), np.uint8)
     className = ""
-
     if predictedClass == 0:
         className = "Swing"
-        print("pressing SPACE")
+        if confidence >= 0.99:
+            print("Detected: " + className)
+        # if isStoped == False:
+        #     isStoped = True
+        #     print("Stopping")
+        #     time.sleep(0.5)
+        #     keyboard.press(Key.space)
+        #     keyboard.release(Key.space)
     elif predictedClass == 1:
         className = "Palm"
-        print("pressing SPACE")
-        time.sleep(0.1)
-        keyboard.press(Key.space)
-        keyboard.release(Key.space)
+        if confidence >= 0.999:
+            print("Detected: " + className)
+            if isStoped == True:
+                isStoped = False
+                print("Starting")
+                time.sleep(0.5)
+                keyboard.press(Key.space)
+                keyboard.release(Key.space)
     elif predictedClass == 2:
         className = "Fist"
-        print("pressing a")
-        time.sleep(0.1)
-        keyboard.press('a')
-        keyboard.release('a')
+        if confidence >= 0.9999:
+            print("Detected: " + className)
+            if isStoped == False:
+                isStoped = True
+                print("Stopping")
+                time.sleep(0.5)
+                keyboard.press(Key.space)
+                keyboard.release(Key.space)
 
     cv2.putText(textImage, "Pedicted Class : " + className,
                 (30, 30),

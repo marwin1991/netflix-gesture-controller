@@ -1,31 +1,32 @@
+import time
+
+import cv2
+import imutils
+import numpy as np
 import tensorflow as tf
 import tflearn
+from PIL import Image
+from pynput.keyboard import Key, Controller
 from tflearn.layers.conv import conv_2d, max_pool_2d
 from tflearn.layers.core import input_data, dropout, fully_connected
 from tflearn.layers.estimator import regression
-import numpy as np
-from PIL import Image
-import cv2
-import imutils
-import time
-from pynput.keyboard import Key, Controller
 
 # global variables
 bg = None
 keyboard = Controller()
-isStoped = False
+is_stopped = False
 
 
-def resizeImage(imageName):
-    basewidth = 100
-    img = Image.open(imageName)
-    wpercent = (basewidth / float(img.size[0]))
-    hsize = int((float(img.size[1]) * float(wpercent)))
-    img = img.resize((basewidth, hsize), Image.ANTIALIAS)
-    img.save(imageName)
+def resize_image(image_name):
+    base_width = 100
+    img = Image.open(image_name)
+    width_percent = (base_width / float(img.size[0]))
+    height_size = int((float(img.size[1]) * float(width_percent)))
+    img = img.resize((base_width, height_size), Image.ANTIALIAS)
+    img.save(image_name)
 
 
-def run_avg(image, aWeight):
+def run_avg(image, average_weight):
     global bg
     # initialize the background
     if bg is None:
@@ -33,7 +34,7 @@ def run_avg(image, aWeight):
         return
 
     # compute weighted average, accumulate it and update the background
-    cv2.accumulateWeighted(image, bg, aWeight)
+    cv2.accumulateWeighted(image, bg, average_weight)
 
 
 def segment(image, threshold=25):
@@ -42,30 +43,30 @@ def segment(image, threshold=25):
     diff = cv2.absdiff(bg.astype("uint8"), image)
 
     # threshold the diff image so that we get the foreground
-    thresholded = cv2.threshold(diff,
-                                threshold,
-                                255,
-                                cv2.THRESH_BINARY)[1]
+    img_threshold = cv2.threshold(diff,
+                                  threshold,
+                                  255,
+                                  cv2.THRESH_BINARY)[1]
 
-    # get the contours in the thresholded image
-    (cnts, _) = cv2.findContours(thresholded.copy(),
-                                    cv2.RETR_EXTERNAL,
-                                    cv2.CHAIN_APPROX_SIMPLE)
+    # get the contours in the threshold image
+    (contours, _) = cv2.findContours(img_threshold.copy(),
+                                     cv2.RETR_EXTERNAL,
+                                     cv2.CHAIN_APPROX_SIMPLE)
 
     # return None, if no contours detected
-    if len(cnts) == 0:
+    if len(contours) == 0:
         return
     else:
         # based on contour area, get the maximum contour which is the hand
-        segmented = max(cnts, key=cv2.contourArea)
-        return (thresholded, segmented)
+        segmented = max(contours, key=cv2.contourArea)
+        return img_threshold, segmented
 
 
 def main():
     # initialize weight for running average
-    aWeight = 0.5
+    average_weight = 0.5
 
-    # get the reference to the webcam
+    # get the reference to the web camera
     camera = cv2.VideoCapture(0)
 
     # region of interest (ROI) coordinates
@@ -76,7 +77,7 @@ def main():
     start_recording = False
 
     # keep looping, until interrupted
-    while (True):
+    while True:
         # get the current frame
         (grabbed, frame) = camera.read()
 
@@ -95,32 +96,32 @@ def main():
         # get the ROI
         roi = frame[top:bottom, right:left]
 
-        # convert the roi to grayscale and blur it
+        # convert the roi to gray scale and blur it
         gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
         gray = cv2.GaussianBlur(gray, (7, 7), 0)
 
         # to get the background, keep looking till a threshold is reached
         # so that our running average model gets calibrated
         if num_frames < 30:
-            run_avg(gray, aWeight)
+            run_avg(gray, average_weight)
         else:
             # segment the hand region
             hand = segment(gray)
 
             # check whether hand region is segmented
             if hand is not None:
-                # if yes, unpack the thresholded image and
+                # if yes, unpack the threshold image and
                 # segmented region
-                (thresholded, segmented) = hand
+                (threshold, segmented) = hand
 
                 # draw the segmented region and display the frame
                 cv2.drawContours(clone, [segmented + (right, top)], -1, (0, 0, 255))
                 if start_recording:
-                    cv2.imwrite('Temp.png', thresholded)
-                    resizeImage('Temp.png')
-                    predictedClass, confidence = getPredictedClass()
-                    showStatistics(predictedClass, confidence)
-                cv2.imshow("Thesholded", thresholded)
+                    cv2.imwrite('Temp.png', threshold)
+                    resize_image('Temp.png')
+                    predicted_class, confidence = get_predicted_class()
+                    show_statistics(predicted_class, confidence)
+                cv2.imshow("Thresholded", threshold)
 
         # draw the segmented hand
         cv2.rectangle(clone, (left, top), (right, bottom), (0, 255, 0), 2)
@@ -142,7 +143,7 @@ def main():
             start_recording = True
 
 
-def getPredictedClass():
+def get_predicted_class():
     # Predict
     image = cv2.imread('Temp.png')
     gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -150,55 +151,55 @@ def getPredictedClass():
     return np.argmax(prediction), (np.amax(prediction) / (prediction[0][0] + prediction[0][1] + prediction[0][2]))
 
 
-def showStatistics(predictedClass, confidence):
-    global isStoped
-    textImage = np.zeros((300, 512, 3), np.uint8)
-    className = ""
-    if predictedClass == 0:
-        className = "Swing"
+def show_statistics(predicted_class, confidence):
+    global is_stopped
+    text_image = np.zeros((300, 512, 3), np.uint8)
+    class_name = ""
+    if predicted_class == 0:
+        class_name = "Swing"
         if confidence >= 0.99:
-            print("Detected: " + className)
+            print("Detected: " + class_name)
         # if isStoped == False:
         #     isStoped = True
         #     print("Stopping")
         #     time.sleep(0.5)
         #     keyboard.press(Key.space)
         #     keyboard.release(Key.space)
-    elif predictedClass == 1:
-        className = "Palm"
+    elif predicted_class == 1:
+        class_name = "Palm"
         if confidence >= 0.999:
-            print("Detected: " + className)
-            if isStoped == True:
-                isStoped = False
+            print("Detected: " + class_name)
+            if is_stopped:
+                is_stopped = False
                 print("Starting")
                 time.sleep(0.5)
                 keyboard.press(Key.space)
                 keyboard.release(Key.space)
-    elif predictedClass == 2:
-        className = "Fist"
+    elif predicted_class == 2:
+        class_name = "Fist"
         if confidence >= 0.9999:
-            print("Detected: " + className)
-            if isStoped == False:
-                isStoped = True
+            print("Detected: " + class_name)
+            if not is_stopped:
+                is_stopped = True
                 print("Stopping")
                 time.sleep(0.5)
                 keyboard.press(Key.space)
                 keyboard.release(Key.space)
 
-    cv2.putText(textImage, "Pedicted Class : " + className,
+    cv2.putText(text_image, "Pedicted Class : " + class_name,
                 (30, 30),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 1,
                 (255, 255, 255),
                 2)
 
-    cv2.putText(textImage, "Confidence : " + str(confidence * 100) + '%',
+    cv2.putText(text_image, "Confidence : " + str(confidence * 100) + '%',
                 (30, 100),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 1,
                 (255, 255, 255),
                 2)
-    cv2.imshow("Statistics", textImage)
+    cv2.imshow("Statistics", text_image)
 
 
 # Model defined
